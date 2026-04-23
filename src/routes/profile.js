@@ -1,8 +1,8 @@
-const exppress = require("express");
+const express = require("express");
 const { userAuth } = require("../middlewares/auth.js");
 const { validateEditProfileData } = require("../utils/validation.js");
 
-const profileRouter = exppress.Router();
+const profileRouter = express.Router();
 
 profileRouter.get("/profile/view", userAuth, async (req, res) => {
   try {

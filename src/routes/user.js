@@ -6,6 +6,40 @@ const User = require("../models/user");
 
 const USER_SAFE_DATA = "firstName lastName photoUrl age gender about skills";
 
+userRouter.get("/user/view", userAuth, async (req, res) => {
+  try {
+    const { userId } = req.query;
+
+    if (!userId) {
+      return res.status(400).json({
+        success: false,
+        message: "userId query parameter is required",
+      });
+    }
+
+    const user = await User.findById(userId).select(USER_SAFE_DATA);
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+
+    res.json({
+      success: true,
+      data: {
+        user: user,
+      },
+    });
+  } catch (err) {
+    res.status(400).json({
+      success: false,
+      message: "Error: " + err.message,
+    });
+  }
+});
+
 userRouter.get("/user/requests/received", userAuth, async (req, res) => {
   try {
     const loggedInUser = req.user;
@@ -53,34 +87,37 @@ userRouter.get("/user/connections", userAuth, async (req, res) => {
 
 userRouter.get("/feed", userAuth, async (req, res) => {
   try {
-    // User should see all the uiser cards except
-    // 0. his own card
-    // 1. his connections
-    // 2. ignored people
-    // 3. already sent the connection requests
-
     const loggedInUser = req.user;
 
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 10;
     const skip = (page - 1) * limit;
 
-    //Find all connection requests (sent+received)
+    // Find connection requests where THIS user is involved
     const connectionRequests = await ConnectionRequest.find({
-      $or: [{ fromUserId: loggedInUser._id }, { toUserId: loggedInUser._id }],
+      $or: [
+        { fromUserId: loggedInUser._id },
+        { toUserId: loggedInUser._id }
+      ]
     }).select("fromUserId toUserId");
 
-    const hideUsersFromFeed = new Set();
-    connectionRequests.forEach((req) => {
-      hideUsersFromFeed.add(req.fromUserId._id.toString());
-      hideUsersFromFeed.add(req.toUserId._id.toString());
+    // Build array of users to exclude: self + users with existing requests with this user
+    const usersToExclude = [loggedInUser._id];
+    
+    connectionRequests.forEach((conn) => {
+      // If I sent the request, hide the recipient
+      if (conn.fromUserId.toString() === loggedInUser._id.toString()) {
+        usersToExclude.push(conn.toUserId);
+      }
+      // If I received the request, hide the sender
+      else {
+        usersToExclude.push(conn.fromUserId);
+      }
     });
-    0;
+
+    // Get available users for feed
     const users = await User.find({
-      $and: [
-        { _id: { $nin: Array.from(hideUsersFromFeed) } },
-        { _id: { $ne: loggedInUser._id } },
-      ],
+      _id: { $nin: usersToExclude }
     })
       .select(USER_SAFE_DATA)
       .skip(skip)
@@ -94,5 +131,4 @@ userRouter.get("/feed", userAuth, async (req, res) => {
     res.status(400).send("Error: " + err.message);
   }
 });
-
 module.exports = userRouter;
